@@ -1,0 +1,178 @@
+from google import genai
+import fitz # PyMuPDF library for PDF handling
+import chromadb #Stored locally on the computer.
+import time
+
+embed_model = "gemini-embedding-001"
+generate_model = "gemini-2.5-flash"
+max_retries = 5
+retry_delay = 20  # seconds
+
+def file_reader(file_name):
+    try:
+        doc = fitz.open(file_name)
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
+        
+        print(f"Extracted {len(text)} characters from {file_name}")
+        #text.strip() removes any leading or trailing whitespace from the text, and then checks if the resulting string is empty. If it is empty, it means that no text was extracted from the PDF, which could be due to the PDF containing only images or non-selectable text. In such cases, a warning message is printed to alert the user about the issue.
+        if not text.strip():
+            print(f"Warning: No text extracted from {file_name}. Check if the PDF contains selectable text.")
+        return text
+    except Exception as e:
+        print(f"Error opening {file_name}: {e}")
+        return ""
+def word_count(text):
+    """Counts the number of words in the given text."""
+    words = text.split()
+    return len(words)
+
+#when explaining the overlap, explain the overlap in relation to the pdf, and the pdf's content.
+#for chunk size, when doing research, I found that the optimal chunk size for embedding ranges from as low as 128 tokens (milvus.io) and as high as 1024 (pinecone.io) tokens, withboth sites recommending (128-256) being on the smaller end.
+#Geeks for Geeks recommends using a chunk size of 300-500 tokens as a nice middle ground.
+#500 tokens (unit of splitting text, in this case words) is the size I decided on.
+#this size allows to keep a good amount of context in each chunk, whilst ensureing the chunks don't get too cluttered.
+#for overlap, I found that an overlap between a 10-20% of the chunk size is recommended (unstruct.com) to make sure a good amout of context is preserved between chunks.
+#15% is a the middle ground between the two ends of the recommended range, so it keeps a good amout of context between the cunks, while not overlapping so much that the chunks are all the same text.
+#Both chunk size and overlap size help ensure that everything is covered in a way that can be parsed through in a meaningful way, while not not having too much redudancy, but still keeping enough context so that nothing gets lost.
+def fixed_chunking(text, chunk_size = 1000, overlap = 150):
+    """Splits the input text into fixed-size chunks."""
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunks.append(" ".join(words[i:i + chunk_size]))
+    return chunks
+
+client = genai.Client()
+#Due to not specifying the path inside the following function, the database will be lost after the program finishes executing.
+#chroma_client = chromadb.Client()
+
+
+
+
+#file_1 is approximately tripple the length of file_2 and filee_3, in terms of page number, and causes problems with the embedding process, so I am taking it out currently, and can try to add it back in later.
+#file_1 = "The_Crooked_Moon_Digital_PDF_-_2024_v1.1.pdf"  
+file_2 = "moonshine core and chicago guide pre-release.pdf"
+file_3 = "PR_Core_Book_Second-Print_Digital_Hi-Res.pdf"
+
+
+combined_text = file_reader(file_2) + file_reader(file_3) #+ file_reader(file_1)
+
+# text_1 = file_reader(file_1)
+# words_1 = word_count(text_1)
+
+
+#text_2 = file_reader(file_2)
+#words_2 = word_count(text_2)
+
+
+#text_3 = file_reader(file_3)
+# words_3 = word_count(text_3)
+
+
+#chunks_1 = fixed_chunking(text_1, chunk_size = 500, overlap = 75)
+#chunks_2 = fixed_chunking(text_2, chunk_size = 300, overlap = 50)
+#chunks_3 = fixed_chunking(text_3, chunk_size = 500, overlap = 75)
+
+all_chunks = fixed_chunking(combined_text, chunk_size = 500, overlap = 75)
+if not all_chunks:
+    print("Error: No text chunks were created. Please check if the PDF contains selectable text or if the file path is correct.")
+    exit()
+
+#collection code goes here, create a collection, and then add the vectors to the collection, and then we can query the collection later on.
+dbClient = chromadb.PersistentClient(path = "./my_vector_database")
+collection = dbClient.get_or_create_collection(name ="pdf_chunks")
+
+all_ids = [f"chunk_{i}" for i in range(len(all_chunks))]
+all_embeddings = []
+if collection.count() == 0:
+    print("Collection is empty. Starting embedding process...")
+    batch_size = 30  # Adjust batch size as needed
+    for i in range(0, len(all_chunks), batch_size):
+        batch_chunks = all_chunks[i:i + batch_size]
+        print (f"Processing batch {i // batch_size + 1} with {len(batch_chunks)} chunks...")
+        success = False
+        retries = 0
+        while not success and retries < max_retries:
+            try:
+                result = client.models.embed_content(model=embed_model, contents=batch_chunks)
+                batch_embeddings = [e.values for e in result.embeddings]
+                all_embeddings.extend(batch_embeddings)
+                success = True
+                if i + batch_size < len(all_chunks):
+                    print("Batch processed successfully. Waiting 12 seconds before processing the next batch to avoid rate limits...")
+                    time.sleep(12)  # Sleep to avoid hitting rate limits
+            except Exception as e:
+                error_message = str(e).upper()
+                if any(x in error_message for x in ["429", "RESOURCE EXHAUSTED", "503", "UNAVAILABLE"]):
+                    print(f"Rate limit hit, Waiting {retry_delay + (retry_delay * retries)} seconds before retrying...")
+                    time.sleep(retry_delay + (retry_delay * retries))  # Wait before retrying
+                    retries += 1
+                else:
+                    print(f"Error embedding batch {i // batch_size + 1}: {e}")
+                    raise e
+        if not success:
+            print(f"Failed to generate embeddings after multiple retries for batch {i // batch_size + 1}.")
+            exit()
+    if len(all_embeddings) == len(all_chunks):
+        print(f"All chunks embedded successfully after processing batch {i // batch_size + 1}.")
+        collection.add(embeddings = all_embeddings,documents = all_chunks, ids = all_ids)
+    else: 
+        print(f"Warning: Number of embeddings ({len(all_embeddings)}) does not match number of chunks ({len(all_chunks)}) after processing batch {i // batch_size + 1}. Check for errors in the embedding process.")
+        exit()
+else:
+    print(f"Collection already contains {collection.count()} chunks. Skipping addition of new chunks.")
+
+#embidding is the numerical representation, documents is the original text chunks, ids is the Unique IDs, which are required.
+print("len(all_chunks)    =", len(all_chunks))
+print("len(all_embeddings) =", len(all_embeddings))
+
+if not all_chunks:
+    raise ValueError("No chunks were created from the PDFs; check file paths and chunking.")
+if not all_embeddings:
+    raise ValueError("No embeddings were generated; check embedding process.")
+if len(all_chunks) != len(all_embeddings):
+    raise ValueError(f"Warning: Number of chunks ({len(all_chunks)}) does not match number of embeddings ({len(all_embeddings)}). Check for errors in the embedding process.")
+#chunks = the unembedded chunks, result is the embedded chunks.
+
+print("len(all_ids)       =", len(all_ids))
+#print(f"Stored {collection.count()} chunks in the collection.")
+
+print("Hello, welcome to the PDF Questioning Answering System! This allows you to ask questions about the content of three TTRPG books, 'The Crooked Moon', a book for D&D 5e 2014, 'Moonshine Core and Chicago Guide', the Core Rulebook for the Moonshine TTRPG and guide to Chicago, and 'Power Rangers Core Book', the Power Rangers TTRPG Core Rulebook. You can ask any question about the content of these books, and the system will do its best to answer your question based on the content of the books. Please note that the system may not be able to answer all questions, but it will do its best to provide accurate and relevant information based on the content of the books. It's recommended to specify which book you are curious about in the question. Let's get started!")
+user_query = input("Enter your query: ")
+#this statement embeds the user query using the same embedding model as used before, and then it returns the vector representation of the user query.
+embedded_query = client.models.embed_content(model = embed_model, contents = user_query)
+
+#this staement gets the numerical value of the first element in the embeddded_query vector.
+#if this statement didn't have the .values at the end, it would return everything about the first element of the array, not just the numerical value.
+query_vector = embedded_query.embeddings[0].values
+
+#this function call finds the top n_results most similar chunks in query_vector, and then it returns the similar chunks in a list and sets comparison_results to the list for the time being.
+comparison_results = collection.query(query_embeddings = [query_vector], n_results =  3)
+
+database_results = comparison_results['documents'][0]
+#print(f"Top result: {database_results}")
+
+final_result_text = "\n".join(database_results)
+prompt = "Answer the question using ONLY the provided context."
+final_prompt = f"{prompt}\n\nContext:\n{final_result_text}\n\nQuestion: {user_query}"
+
+#want gemini-2.5-flash because it provides good speed,built in tool use, and it can naturally take in text and images, which is useful.
+response = None
+for i in range(max_retries):
+    try:
+         response = client.models.generate_content(model = generate_model, contents = final_prompt)
+         print(f"Response: {response.text}")
+         break
+    except Exception as e:
+        error_message = str(e).upper()
+        if any(x in error_message for x in ["503", "UNAVAILABLE"]):
+            print(f"Model is currently overloaded (503), Waiting {retry_delay} seconds before retrying...")
+            time.sleep(retry_delay)  # Wait before retrying
+        else:
+            print(f"Error generating response: {e}")
+            raise e
+
+print(f"Response: {response.text}")
