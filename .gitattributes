@@ -1,3 +1,0 @@
-*.pdf filter=lfs diff=lfs merge=lfs -text
-C:/CS[[:space:]]325[[:space:]]Stuff/Project[[:space:]]1/moonshine[[:space:]]core[[:space:]]and[[:space:]]chicago[[:space:]]guide[[:space:]]pre-release.pdf filter=lfs diff=lfs merge=lfs -text
-C:/CS[[:space:]]325[[:space:]]Stuff/Project[[:space:]]1/PR_Core_Book_Second-Print_Digital_Low-Res.pdf filter=lfs diff=lfs merge=lfs -text
