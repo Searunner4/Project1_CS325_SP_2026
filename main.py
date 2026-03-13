@@ -16,7 +16,7 @@ def file_reader(file_name):
             text += page.get_text()
         doc.close()
         
-        print(f"Extracted {len(text)} characters from {file_name}")
+        #print(f"Extracted {len(text)} characters from {file_name}")
         #text.strip() removes any leading or trailing whitespace from the text, and then checks if the resulting string is empty. If it is empty, it means that no text was extracted from the PDF, which could be due to the PDF containing only images or non-selectable text. In such cases, a warning message is printed to alert the user about the issue.
         if not text.strip():
             print(f"Warning: No text extracted from {file_name}. Check if the PDF contains selectable text.")
@@ -116,6 +116,13 @@ if collection.count() == 0:
         if not success:
             print(f"Failed to generate embeddings after multiple retries for batch {i // batch_size + 1}.")
             exit()
+        if not all_chunks:
+            raise ValueError("No chunks were created from the PDFs; check file paths and chunking.")
+        if not all_embeddings:
+            raise ValueError("No embeddings were generated; check embedding process.")
+        if len(all_chunks) != len(all_embeddings):
+            raise ValueError(f"Warning: Number of chunks ({len(all_chunks)}) does not match number of embeddings ({len(all_embeddings)}). Check for errors in the embedding process.")
+#chunks = the unembedded chunks, result is the embedded chunks.
     if len(all_embeddings) == len(all_chunks):
         print(f"All chunks embedded successfully after processing batch {i // batch_size + 1}.")
         collection.add(embeddings = all_embeddings,documents = all_chunks, ids = all_ids)
@@ -126,21 +133,15 @@ else:
     print(f"Collection already contains {collection.count()} chunks. Skipping addition of new chunks.")
 
 #embidding is the numerical representation, documents is the original text chunks, ids is the Unique IDs, which are required.
-print("len(all_chunks)    =", len(all_chunks))
-print("len(all_embeddings) =", len(all_embeddings))
+#print("len(all_chunks)    =", len(all_chunks))
+#print("len(all_embeddings) =", len(all_embeddings))
 
-if not all_chunks:
-    raise ValueError("No chunks were created from the PDFs; check file paths and chunking.")
-if not all_embeddings:
-    raise ValueError("No embeddings were generated; check embedding process.")
-if len(all_chunks) != len(all_embeddings):
-    raise ValueError(f"Warning: Number of chunks ({len(all_chunks)}) does not match number of embeddings ({len(all_embeddings)}). Check for errors in the embedding process.")
-#chunks = the unembedded chunks, result is the embedded chunks.
+
 
 print("len(all_ids)       =", len(all_ids))
 #print(f"Stored {collection.count()} chunks in the collection.")
 
-print("Hello, welcome to the PDF Questioning Answering System! This allows you to ask questions about the content of three TTRPG books, 'The Crooked Moon', a book for D&D 5e 2014, 'Moonshine Core and Chicago Guide', the Core Rulebook for the Moonshine TTRPG and guide to Chicago, and 'Power Rangers Core Book', the Power Rangers TTRPG Core Rulebook. You can ask any question about the content of these books, and the system will do its best to answer your question based on the content of the books. Please note that the system may not be able to answer all questions, but it will do its best to provide accurate and relevant information based on the content of the books. It's recommended to specify which book you are curious about in the question. Let's get started!")
+print("Hello, welcome to the PDF Questioning Answering System! This allows you to ask questions about the content of 2 TTRPG books, 'Moonshine Core and Chicago Guide', the Core Rulebook for the Moonshine TTRPG and guide to Chicago, and 'Power Rangers Core Book', the Power Rangers TTRPG Core Rulebook. You can ask any question about the content of these books, and the system will answer your question based on the content of the books. Please note that the system may not be able to answer all questions, but it will attempt to provide accurate and relevant information based on the content of the books. It's recommended to specify which book you are curious about in the question. Let's get started!")
 user_query = input("Enter your query: ")
 #this statement embeds the user query using the same embedding model as used before, and then it returns the vector representation of the user query.
 embedded_query = client.models.embed_content(model = embed_model, contents = user_query)
