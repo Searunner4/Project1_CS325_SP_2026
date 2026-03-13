@@ -1,3 +1,4 @@
+# Project1_CS325_SP_2026
 TTRPG Explainer AI assistance:
 
 Start by downloading/installing the dependencies from the requirements.txt.
