@@ -55,7 +55,7 @@ client = genai.Client()
 #file_1 is approximately tripple the length of file_2 and filee_3, in terms of page number, and causes problems with the embedding process, so I am taking it out currently, and can try to add it back in later.
 #file_1 = "The_Crooked_Moon_Digital_PDF_-_2024_v1.1.pdf"  
 file_2 = "moonshine core and chicago guide pre-release.pdf"
-file_3 = "PR_Core_Book_Second-Print_Digital_Hi-Res.pdf"
+file_3 = "PR_Core_Book_Second-Print_Digital_Low-Res.pdf"
 
 
 combined_text = file_reader(file_2) + file_reader(file_3) #+ file_reader(file_1)
@@ -113,15 +113,15 @@ if collection.count() == 0:
                 else:
                     print(f"Error embedding batch {i // batch_size + 1}: {e}")
                     raise e
-        if not success:
-            print(f"Failed to generate embeddings after multiple retries for batch {i // batch_size + 1}.")
-            exit()
-        if not all_chunks:
-            raise ValueError("No chunks were created from the PDFs; check file paths and chunking.")
-        if not all_embeddings:
-            raise ValueError("No embeddings were generated; check embedding process.")
-        if len(all_chunks) != len(all_embeddings):
-            raise ValueError(f"Warning: Number of chunks ({len(all_chunks)}) does not match number of embeddings ({len(all_embeddings)}). Check for errors in the embedding process.")
+    if not success:
+        print(f"Failed to generate embeddings after multiple retries for batch {i // batch_size + 1}.")
+        exit()
+    if not all_chunks:
+        raise ValueError("No chunks were created from the PDFs; check file paths and chunking.")
+    if not all_embeddings:
+        raise ValueError("No embeddings were generated; check embedding process.")
+    if len(all_chunks) != len(all_embeddings):
+        raise ValueError(f"Warning: Number of chunks ({len(all_chunks)}) does not match number of embeddings ({len(all_embeddings)}). Check for errors in the embedding process.")
 #chunks = the unembedded chunks, result is the embedded chunks.
     if len(all_embeddings) == len(all_chunks):
         print(f"All chunks embedded successfully after processing batch {i // batch_size + 1}.")
