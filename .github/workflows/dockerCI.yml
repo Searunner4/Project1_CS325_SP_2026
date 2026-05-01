@@ -29,5 +29,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: install dependencies
+        run: pip install PyMuPDF chromadb google-genai packaging pytest
+
       - name: Run tests in container
         run: pytest
